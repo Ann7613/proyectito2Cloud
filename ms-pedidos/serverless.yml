@@ -1,0 +1,165 @@
+org: ${env:ORG_NAME}
+service: ${env:SERVICE_NAME}
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: python3.13
+  memorySize: 256
+  stage: dev
+  region: us-east-1
+  timeout: 20
+
+  iam:
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+
+  environment:
+    # recursos creados en este stack
+    ORDERS_TABLE:
+      Ref: OrdersTable
+    EVENT_BUS_NAME:
+      Ref: ChinaWokEventBus
+    DELIVERY_BUCKET:
+      Ref: DeliveryBucket
+
+functions:
+  # POST /orders - Crear pedido
+  CreateOrder:
+    handler: CreateOrder.lambda_handler
+    events:
+      - http:
+          path: /orders
+          method: post
+          cors: true
+          
+
+  # GET /orders/customer/{customer_id}
+  OrderByCustomer:
+    handler: OrderByCustomer.lambda_handler
+    events:
+      - http:
+          path: /orders/customer/{customer_id}
+          method: get
+          cors: true
+          
+
+  # PATCH /orders/{order_id}/cancel
+  CancelOrder:
+    handler: CancelOrder.lambda_handler
+    events:
+      - http:
+          path: /orders/{order_id}/cancel
+          method: patch
+          cors: true
+          
+
+  # GET /orders?status=X
+  OrdersByStatus:
+    handler: OrdersByStatus.lambda_handler
+    events:
+      - http:
+          path: /orders
+          method: get
+          cors: true
+          
+
+  # (Opcional) UpdateOrderStatus eliminado porque Fulfillment maneja flujo
+  # UpdateOrderStatus:
+  #   handler: UpdateOrderStatus.lambda_handler
+  #   events:
+  #     - http:
+  #         path: /orders/{order_id}/status
+  #         method: patch
+  #         cors: true
+
+resources:
+  Resources:
+
+    # -----------------------------
+    # DynamoDB: Orders table multi-tenant
+    # PK: tenant_id, SK: order_id
+    # Índices IGUALES a Fulfillment
+    # -----------------------------
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-OrdersTable
+        BillingMode: PAY_PER_REQUEST
+
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: order_id
+            AttributeType: S
+          - AttributeName: customer_id
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: created_at
+            AttributeType: S
+
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: order_id
+            KeyType: RANGE
+
+        GlobalSecondaryIndexes:
+          # Vista cliente
+          - IndexName: CustomerIndex
+            KeySchema:
+              - AttributeName: customer_id
+                KeyType: HASH
+              - AttributeName: created_at
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+          # Dashboard por estado, aislado por tenant
+          - IndexName: StatusIndex
+            KeySchema:
+              - AttributeName: tenant_id
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # -----------------------------
+    # EventBridge Bus
+    # -----------------------------
+    ChinaWokEventBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: ${self:service}-${self:provider.stage}-china-wok-bus
+
+    # -----------------------------
+    # S3 Bucket (requisito)
+    # -----------------------------
+    DeliveryBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:service}-${self:provider.stage}-delivery-bucket
+        VersioningConfiguration:
+          Status: Enabled
+
+  Outputs:
+    OrdersTableName:
+      Value:
+        Ref: OrdersTable
+      Export:
+        Name: ${self:service}-${self:provider.stage}-OrdersTableName
+
+    EventBusName:
+      Value:
+        Ref: ChinaWokEventBus
+      Export:
+        Name: ${self:service}-${self:provider.stage}-EventBusName
+
+    DeliveryBucketName:
+      Value:
+        Ref: DeliveryBucket
+      Export:
+        Name: ${self:service}-${self:provider.stage}-DeliveryBucketName

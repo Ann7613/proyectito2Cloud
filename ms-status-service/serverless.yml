@@ -1,0 +1,132 @@
+org: ${env:ORG_NAME}
+service: ${env:SERVICE_NAME}
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: python3.13
+  memorySize: 256
+  stage: dev
+  region: us-east-1
+  timeout: 20
+
+  iam:
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+
+  environment:
+    # Recursos importados desde Pedidos
+    ORDERS_TABLE:
+      Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-OrdersTableName
+
+    EVENT_BUS_NAME:
+      Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-EventBusName
+
+functions:
+  # -----------------------------
+  # EVENT LISTENER
+  # -----------------------------
+  eventListener:
+    handler: handlers/event_listener.handle_order_event
+    description: Escucha eventos del flujo y actualiza event_history en DynamoDB
+    events:
+      - eventBridge:
+          eventBus:
+            Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-EventBusName
+          pattern:
+            source:
+              - orders.service
+              - fulfillment.service
+            detail-type:
+              - PedidoRecibido
+              - PedidoInicializado
+              - CocinaIniciada
+              - EmpaqueIniciado
+              - RepartoIniciado
+              - PedidoEntregado
+              - PedidoCancelado
+
+  # -----------------------------
+  # API ENDPOINTS
+  # -----------------------------
+  getOrderStatus:
+    handler: handlers/get_order_status.lambda_handler
+    description: Obtiene estado actual de un pedido
+    events:
+      - http:
+          path: status/order/{order_id}
+          method: get
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          integration: lambda-proxy
+          
+
+  getOrderHistory:
+    handler: handlers/get_order_history.lambda_handler
+    description: Obtiene historial completo/timeline de un pedido
+    events:
+      - http:
+          path: status/order/{order_id}/history
+          method: get
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          integration: lambda-proxy
+          
+
+  getDashboardOrders:
+    handler: handlers/get_dashboard_orders.lambda_handler
+    description: Dashboard del restaurante (por tenant y estado)
+    memorySize: 512
+    events:
+      - http:
+          path: status/dashboard
+          method: get
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          integration: lambda-proxy
+          
+
+  getCustomerOrders:
+    handler: handlers/get_customer_orders.lambda_handler
+    description: Lista pedidos de un cliente (filtrados por tenant)
+    events:
+      - http:
+          path: status/customer/{customer_id}
+          method: get
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          integration: lambda-proxy
+          

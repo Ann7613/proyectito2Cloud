@@ -1,0 +1,90 @@
+org: ${env:ORG_NAME}
+service: ${env:USERS_SERVICE_NAME}
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: python3.13
+  memorySize: 256
+  stage: dev
+  region: us-east-1
+  timeout: 20
+  iam:
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+  environment:
+    USERS_TABLE: ${self:service}-${self:provider.stage}-UsersTable
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+
+functions:
+  CreateUser:
+    handler: CreateUser.lambda_handler
+    events:
+      - http:
+          path: /users
+          method: post
+          cors: true
+          authorizer: aws_iam
+      - eventBridge:
+          eventBus: ${env:EVENT_BUS_NAME}
+          pattern:
+            source:
+              - "users.service"
+            detail-type:
+              - "UserCreated"
+  GetUser:
+    handler: GetUser.lambda_handler
+    events:
+      - http:
+          path: /users/{user_id}
+          method: get
+          cors: true
+          authorizer: aws_iam
+  UpdateUser:
+    handler: UpdateUser.lambda_handler
+    events:
+      - http:
+          path: /users/{user_id}
+          method: patch
+          cors: true
+          authorizer: aws_iam
+  DeleteUser:
+    handler: DeleteUser.lambda_handler
+    events:
+      - http:
+          path: /users/{user_id}
+          method: delete
+          cors: true
+          authorizer: aws_iam
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-UsersTable
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: user_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: user_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: EmailIndex
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+outputs:
+  UsersTableName:
+    Value: !Ref UsersTable
+    Export:
+      Name: ${self:service}-${self:provider.stage}-UsersTableName

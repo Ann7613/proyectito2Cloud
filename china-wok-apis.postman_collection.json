@@ -1,0 +1,288 @@
+{
+  "info": {
+    "name": "China Wok - Serverless Flow",
+    "_postman_id": "f5c4b87f-aaaa-bbbb-cccc-000000000001",
+    "description": "Colección para probar ms-pedidos, ms-cumplimiento y ms-status de China Wok.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1 - ms-pedidos (Orders)",
+      "item": [
+        {
+          "name": "Create Order (POST /orders)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"cliente_001\",\n  \"items\": [\n    {\n      \"product_id\": \"POLLO_ARROZ\",\n      \"quantity\": 2,\n      \"price\": 15.5\n    },\n    {\n      \"product_id\": \"ROLLO_PRIMAVERA\",\n      \"quantity\": 3,\n      \"price\": 4.0\n    }\n  ]\n}"
+            },
+            "url": "{{orders_base_url}}/orders"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Guarda order_id y customer_id\", function () {",
+                  "  var jsonData = {};\n  try { jsonData = pm.response.json(); } catch (e) {}",
+                  "  if (jsonData && jsonData.data) {",
+                  "    if (jsonData.data.order_id) {",
+                  "      pm.collectionVariables.set(\"last_order_id\", jsonData.data.order_id);",
+                  "    }",
+                  "    if (jsonData.data.customer_id) {",
+                  "      pm.collectionVariables.set(\"customer_id\", jsonData.data.customer_id);",
+                  "    }",
+                  "  }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Orders by Customer (GET /orders/customer/{customer_id})",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{orders_base_url}}/orders/customer/{{customer_id}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Orders by Status (GET /orders?status=created)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{orders_base_url}}/orders?status=created"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Order (PATCH /orders/{order_id}/cancel)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelled_by\": \"{{customer_id}}\",\n  \"reason\": \"Me confundí al pedir\"\n}"
+            },
+            "url": "{{orders_base_url}}/orders/{{last_order_id}}/cancel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 - ms-cumplimiento (Fulfillment / Staff)",
+      "item": [
+        {
+          "name": "Assign Cook (POST /orders/{order_id}/assign-cook)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_id\": \"COOK_01\",\n  \"staff_name\": \"Juan Cocinero\"\n}"
+            },
+            "url": "{{fulfillment_base_url}}/orders/{{last_order_id}}/assign-cook"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Packed (POST /orders/{order_id}/mark-packed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_id\": \"PACKER_01\",\n  \"staff_name\": \"Ana Empacadora\"\n}"
+            },
+            "url": "{{fulfillment_base_url}}/orders/{{last_order_id}}/mark-packed"
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Delivery (POST /orders/{order_id}/assign-delivery)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_id\": \"DELIVERY_01\",\n  \"staff_name\": \"Luis Repartidor\"\n}"
+            },
+            "url": "{{fulfillment_base_url}}/orders/{{last_order_id}}/assign-delivery"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Delivered (POST /orders/{order_id}/mark-delivered)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"staff_id\": \"DELIVERY_01\",\n  \"staff_name\": \"Luis Repartidor\"\n}"
+            },
+            "url": "{{fulfillment_base_url}}/orders/{{last_order_id}}/mark-delivered"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 - ms-status (Estado / Dashboard)",
+      "item": [
+        {
+          "name": "Get Order Status (GET /status/order/{order_id})",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{status_base_url}}/status/order/{{last_order_id}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order History (GET /status/order/{order_id}/history)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{status_base_url}}/status/order/{{last_order_id}}/history"
+          },
+          "response": []
+        },
+        {
+          "name": "Dashboard (GET /status/dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{status_base_url}}/status/dashboard"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Customer Orders (GET /status/customer/{customer_id})",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-tenant-id",
+                "value": "{{tenant_id}}"
+              }
+            ],
+            "url": "{{status_base_url}}/status/customer/{{customer_id}}"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "orders_base_url",
+      "value": "https://1qvyjv74r3.execute-api.us-east-1.amazonaws.com/dev"
+    },
+    {
+      "key": "fulfillment_base_url",
+      "value": "https://gc8sncxhie.execute-api.us-east-1.amazonaws.com/dev"
+    },
+    {
+      "key": "status_base_url",
+      "value": "https://93icxxrllb.execute-api.us-east-1.amazonaws.com/dev"
+    },
+    {
+      "key": "tenant_id",
+      "value": "CHINAWOK_LIMA_CENTRO"
+    },
+    {
+      "key": "last_order_id",
+      "value": ""
+    },
+    {
+      "key": "customer_id",
+      "value": "cliente_001"
+    }
+  ]
+}

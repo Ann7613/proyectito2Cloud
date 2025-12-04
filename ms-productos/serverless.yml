@@ -1,0 +1,93 @@
+org: ${env:ORG_NAME}
+service: ${env:PRODUCTS_SERVICE_NAME}
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: python3.13
+  memorySize: 256
+  stage: dev
+  region: us-east-1
+  timeout: 20
+  iam:
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+  environment:
+    PRODUCTS_TABLE: ${self:service}-${self:provider.stage}-ProductsTable
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+
+functions:
+  CreateProduct:
+    handler: CreateProduct.lambda_handler
+    events:
+      - http:
+          path: /products
+          method: post
+          cors: true
+          authorizer: aws_iam
+  GetProduct:
+    handler: GetProduct.lambda_handler
+    events:
+      - http:
+          path: /products/{product_id}
+          method: get
+          cors: true
+          authorizer: aws_iam
+  ListProducts:
+    handler: ListProducts.lambda_handler
+    events:
+      - http:
+          path: /products
+          method: get
+          cors: true
+          authorizer: aws_iam
+  UpdateProduct:
+    handler: UpdateProduct.lambda_handler
+    events:
+      - http:
+          path: /products/{product_id}
+          method: patch
+          cors: true
+          authorizer: aws_iam
+  DeleteProduct:
+    handler: DeleteProduct.lambda_handler
+    events:
+      - http:
+          path: /products/{product_id}
+          method: delete
+          cors: true
+          authorizer: aws_iam
+
+resources:
+  Resources:
+    ProductsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-ProductsTable
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tenant_id
+            AttributeType: S
+          - AttributeName: product_id
+            AttributeType: S
+          - AttributeName: category
+            AttributeType: S
+        KeySchema:
+          - AttributeName: tenant_id
+            KeyType: HASH
+          - AttributeName: product_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: CategoryIndex
+            KeySchema:
+              - AttributeName: category
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+outputs:
+  ProductsTableName:
+    Value: !Ref ProductsTable
+    Export:
+      Name: ${self:service}-${self:provider.stage}-ProductsTableName

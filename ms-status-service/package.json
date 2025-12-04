@@ -1,0 +1,13 @@
+{
+  "name": "china-wok-status-service",
+  "version": "1.0.0",
+  "description": "Servicio de Estado y Notificaciones para China Wok",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "remove": "serverless remove"
+  },
+  "devDependencies": {
+    "serverless-dotenv-plugin": "^6.0.0"
+  }
+}

@@ -1,0 +1,232 @@
+org: ${env:ORG_NAME}
+service: ${env:FULFILLMENT_SERVICE_NAME}
+
+plugins:
+  - serverless-dotenv-plugin
+  - serverless-step-functions
+
+provider:
+  name: aws
+  runtime: python3.13
+  memorySize: 256
+  stage: dev
+  region: us-east-1
+  timeout: 20
+
+  iam:
+    role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+
+  environment:
+    # Recursos creados en el stack de Pedidos (IMPORTADOS)
+    ORDERS_TABLE:
+      Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-OrdersTableName
+
+    EVENT_BUS_NAME:
+      Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-EventBusName
+
+    DELIVERY_BUCKET:
+      Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-DeliveryBucketName
+
+    FULFILLMENT_STATE_MACHINE_ARN: arn:aws:states:${self:provider.region}:${env:AWS_ACCOUNT_ID}:stateMachine:${self:service}-${self:provider.stage}-OrderFulfillment
+
+
+functions:
+  # 1) Listener de EventBridge que inicia Step Functions
+  StartFulfillmentExecution:
+    handler: StartFulfillmentExecution.lambda_handler
+    events:
+      - eventBridge:
+          eventBus:
+            Fn::ImportValue: ${env:ORDERS_SERVICE_NAME}-${self:provider.stage}-EventBusName
+          pattern:
+            source:
+              - "orders.service"
+            detail-type:
+              - "PedidoRecibido"
+
+  # 2) Lambda genérica para almacenar taskToken por cada paso humano
+  StoreTaskToken:
+    handler: StoreTaskToken.lambda_handler
+
+  # 3) Lambda genérica para actualizar estado de pedido y emitir evento
+  UpdateOrderStatusStep:
+    handler: UpdateOrderStatusStep.lambda_handler
+
+  # 4) Endpoints del staff (API Gateway)
+  AssignCook:
+    handler: api/AssignCook.lambda_handler
+    events:
+      - http:
+          path: /orders/{order_id}/assign-cook
+          method: post
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          
+
+  MarkPacked:
+    handler: api/MarkPacked.lambda_handler
+    events:
+      - http:
+          path: /orders/{order_id}/mark-packed
+          method: post
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          
+
+  AssignDelivery:
+    handler: api/AssignDelivery.lambda_handler
+    events:
+      - http:
+          path: /orders/{order_id}/assign-delivery
+          method: post
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          
+
+  MarkDelivered:
+    handler: api/MarkDelivered.lambda_handler
+    events:
+      - http:
+          path: /orders/{order_id}/mark-delivered
+          method: post
+          cors:
+            origin: '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-tenant-id
+            allowCredentials: false
+          
+
+stepFunctions:
+  stateMachines:
+    OrderFulfillmentStateMachine:
+      role: arn:aws:iam::${env:AWS_ACCOUNT_ID}:role/${env:ROLE_NAME}
+      name: ${self:service}-${self:provider.stage}-OrderFulfillment
+      definition:
+        Comment: "Máquina de estados de cumplimiento de pedidos ChinaWok"
+        StartAt: InicializarPedido
+        States:
+          InicializarPedido:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [UpdateOrderStatusStep, Arn]
+            Parameters:
+              action: "INIT"
+              payload.$: "$"
+            Next: EsperarAsignacionCocinero
+
+          EsperarAsignacionCocinero:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName:
+                Fn::GetAtt: [StoreTaskToken, Arn]
+              Payload:
+                taskToken.$: "$$.Task.Token"
+                step: "ASSIGN_COOK"
+                order.$: "$"
+            TimeoutSeconds: 3600
+            Next: Cocinando
+
+          Cocinando:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [UpdateOrderStatusStep, Arn]
+            Parameters:
+              action: "COOKING"
+              payload.$: "$"
+            Next: EsperarEmpaque
+
+          EsperarEmpaque:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName:
+                Fn::GetAtt: [StoreTaskToken, Arn]
+              Payload:
+                taskToken.$: "$$.Task.Token"
+                step: "PACK"
+                order.$: "$"
+            TimeoutSeconds: 3600
+            Next: Empacando
+
+          Empacando:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [UpdateOrderStatusStep, Arn]
+            Parameters:
+              action: "PACKING"
+              payload.$: "$"
+            Next: EsperarAsignacionRepartidor
+
+          EsperarAsignacionRepartidor:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName:
+                Fn::GetAtt: [StoreTaskToken, Arn]
+              Payload:
+                taskToken.$: "$$.Task.Token"
+                step: "ASSIGN_DELIVERY"
+                order.$: "$"
+            TimeoutSeconds: 3600
+            Next: EnReparto
+
+          EnReparto:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [UpdateOrderStatusStep, Arn]
+            Parameters:
+              action: "ON_DELIVERY"
+              payload.$: "$"
+            Next: EsperarEntregado
+
+          EsperarEntregado:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke.waitForTaskToken
+            Parameters:
+              FunctionName:
+                Fn::GetAtt: [StoreTaskToken, Arn]
+              Payload:
+                taskToken.$: "$$.Task.Token"
+                step: "MARK_DELIVERED"
+                order.$: "$"
+            TimeoutSeconds: 7200
+            Next: Entregado
+
+          Entregado:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [UpdateOrderStatusStep, Arn]
+            Parameters:
+              action: "DELIVERED"
+              payload.$: "$"
+            End: true
